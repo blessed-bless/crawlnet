@@ -1,0 +1,24 @@
+# Цитаты с quotes.toscrape.com: несколько записей на странице (each) + пагинация.
+name: quotes
+allowed_domains: [quotes.toscrape.com]
+start:
+  - url: https://quotes.toscrape.com/
+    page: list
+
+settings:
+  delay: 0.3
+  max_pages: 50
+
+pages:
+  list:
+    follow:
+      - css: "li.next a::attr(href)"
+        page: list
+    item:
+      each: "div.quote"
+      key: text
+      required: [text, author]
+      fields:
+        text:   {css: "span.text::text"}
+        author: {css: "small.author::text"}
+        tags:   {css: "a.tag::text", many: true}

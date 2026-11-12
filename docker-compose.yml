@@ -1,0 +1,46 @@
+x-app: &app
+  build: .
+  image: crawlnet
+  restart: unless-stopped
+  environment:
+    CRAWLNET_REDIS_URL: redis://redis:6379/0
+    CRAWLNET_DB_URL: postgresql+asyncpg://crawl:crawl@postgres:5432/crawl
+    CRAWLNET_TG_TOKEN: ${CRAWLNET_TG_TOKEN:-}
+    CRAWLNET_TG_ALLOWED: ${CRAWLNET_TG_ALLOWED:-}
+  volumes:
+    - ./spiders:/app/spiders:ro
+  depends_on:
+    redis: {condition: service_healthy}
+    postgres: {condition: service_healthy}
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes
+    volumes: [redis:/data]
+    healthcheck: {test: ["CMD", "redis-cli", "ping"], interval: 3s, retries: 20}
+
+  postgres:
+    image: postgres:16-alpine
+    environment: {POSTGRES_USER: crawl, POSTGRES_PASSWORD: crawl, POSTGRES_DB: crawl}
+    volumes: [pg:/var/lib/postgresql/data]
+    healthcheck: {test: ["CMD", "pg_isready", "-U", "crawl"], interval: 3s, retries: 20}
+
+  worker:
+    <<: *app
+    command: ["worker", "-c", "8"]
+    deploy: {replicas: 3}
+
+  dashboard:
+    <<: *app
+    command: ["dashboard", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["8000:8000"]
+
+  bot:
+    <<: *app
+    command: ["bot"]
+    profiles: [bot]   # docker compose --profile bot up
+
+volumes:
+  redis:
+  pg:

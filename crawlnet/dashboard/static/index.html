@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>crawlnet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f4f3ef; --panel: #ffffff; --ink: #1d2327; --muted: #6b737a; --line: #e2e0d8;
+    --accent: #1f6f5c; --accent-soft: #d8ece5; --warn: #b5541b; --bad: #b3261e;
+    --mono: "IBM Plex Mono", ui-monospace, monospace; --sans: "IBM Plex Sans", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111416; --panel: #191d20; --ink: #e6e8e9; --muted: #8b949b; --line: #2a3034;
+            --accent: #4fc29f; --accent-soft: #1d3a32; --warn: #e3935c; --bad: #ef6b62; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); }
+  header { display: flex; align-items: baseline; gap: 16px; padding: 20px 24px 8px; flex-wrap: wrap; }
+  h1 { font: 600 20px var(--mono); margin: 0; letter-spacing: -.02em; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; padding: 12px 24px 32px; }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; padding: 12px 16px; } header { padding: 16px; } }
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; grid-column: 1 / -1; }
+  @media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .tile, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .tile { padding: 14px 16px; }
+  .tile b { display: block; font: 600 26px var(--mono); }
+  .tile small { color: var(--muted); }
+  .panel { padding: 16px; min-width: 0; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-weight: 500; color: var(--muted); font-size: 12px; }
+  td.num { font-family: var(--mono); text-align: right; }
+  tr.job { cursor: pointer; }
+  tr.job:hover, tr.job.sel { background: var(--accent-soft); }
+  .scroll { overflow-x: auto; }
+  .badge { font: 600 11px var(--mono); padding: 2px 7px; border-radius: 99px; background: var(--line); }
+  .badge.running { background: var(--accent-soft); color: var(--accent); }
+  .badge.cancelled { color: var(--warn); }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  select, button { font: inherit; padding: 6px 12px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.danger { color: var(--bad); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .stats div { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .stats b { font: 600 18px var(--mono); display: block; }
+  .stats small { color: var(--muted); font-size: 12px; }
+  .chart { height: 180px; margin-bottom: 14px; }
+  .workers { display: flex; flex-wrap: wrap; gap: 6px; }
+  .w { font: 12px var(--mono); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  .w::before { content: "●"; margin-right: 6px; color: var(--accent); }
+  .w.dead::before { color: var(--bad); }
+  .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+  td.trunc { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+  .dead-list { font: 12px var(--mono); color: var(--bad); max-height: 140px; overflow: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>crawl<span>net</span></h1>
+  <span class="sub">распределённый краулер · обновляется каждые 2 с</span>
+</header>
+<main>
+  <section class="tiles">
+    <div class="tile"><b id="t-frontier">–</b><small>в очереди</small></div>
+    <div class="tile"><b id="t-inflight">–</b><small>в работе</small></div>
+    <div class="tile"><b id="t-workers">–</b><small>живых воркеров</small></div>
+    <div class="tile"><b id="t-running">–</b><small>активных задач</small></div>
+  </section>
+
+  <section class="panel">
+    <h2>Задачи</h2>
+    <div class="row">
+      <select id="spider"></select>
+      <button class="primary" id="launch">Запустить</button>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr><th>задача</th><th>статус</th><th class="num">страниц</th><th class="num">записей</th><th class="num">ошибок</th></tr></thead>
+      <tbody id="jobs"></tbody>
+    </table></div>
+    <h2 style="margin-top:18px">Воркеры</h2>
+    <div class="workers" id="workers"></div>
+  </section>
+
+  <section class="panel" id="detail"><div class="empty">Выберите задачу слева</div></section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+let selected = null, chart = null;
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  return r.json();
+}
+
+async function refresh() {
+  const o = await api("/api/overview");
+  $("#t-frontier").textContent = o.queue.frontier;
+  $("#t-inflight").textContent = o.queue.inflight;
+  $("#t-workers").textContent = o.workers.filter((w) => w.alive).length;
+  $("#t-running").textContent = o.jobs.filter((j) => j.status === "running").length;
+
+  const sel = $("#spider");
+  if (sel.options.length !== o.spiders.length) sel.innerHTML = o.spiders.map((s) => `<option>${esc(s)}</option>`).join("");
+
+  $("#jobs").innerHTML = o.jobs.length ? o.jobs.map((j) => {
+    const total = j.enqueued || 1, done = total - j.pending;
+    return `<tr class="job ${j.id === selected ? "sel" : ""}" data-id="${j.id}">
+      <td><b>${esc(j.spider)}</b> <span class="sub">${j.id}</span><div class="bar"><i style="width:${(100 * done / total).toFixed(1)}%"></i></div></td>
+      <td><span class="badge ${j.status}">${j.status}</span></td>
+      <td class="num">${j.fetched}</td><td class="num">${j.items}</td><td class="num">${j.errors}</td></tr>`;
+  }).join("") : `<tr><td colspan="5" class="empty">Задач пока нет</td></tr>`;
+
+  $("#workers").innerHTML = o.workers.map((w) =>
+    `<span class="w ${w.alive ? "" : "dead"}" title="слотов: ${w.concurrency}">${esc(w.id)} · ${w.processed}</span>`
+  ).join("") || `<span class="sub">нет</span>`;
+
+  if (selected) await renderJob(selected);
+}
+
+async function renderJob(id) {
+  const j = await api(`/api/jobs/${id}`);
+  const took = ((j.finished || Date.now() / 1000) - j.created).toFixed(1);
+  const cols = j.sample.length ? Object.keys(j.sample[0]) : [];
+  const box = $("#detail");
+  if (box.dataset.id !== id) {
+    box.dataset.id = id;
+    box.innerHTML = `
+      <div class="row"><h2 style="margin:0;flex:1">${esc(j.spider)} · ${id}</h2>
+        <button data-fmt="csv">CSV</button><button data-fmt="xlsx">Excel</button>
+        <button class="danger" id="cancel">Отменить</button></div>
+      <div class="stats" id="stats"></div>
+      <div class="chart"><canvas id="rate"></canvas></div>
+      <h2>Последние записи</h2><div class="scroll"><table id="sample"></table></div>
+      <h2 style="margin-top:14px">Мёртвые запросы</h2><div class="dead-list" id="dead"></div>`;
+    box.querySelectorAll("[data-fmt]").forEach((b) => b.onclick = () => location.href = `/api/jobs/${id}/export?format=${b.dataset.fmt}`);
+    $("#cancel").onclick = async () => { await api(`/api/jobs/${id}/cancel`, { method: "POST" }); refresh(); };
+    chart?.destroy();
+    const css = getComputedStyle(document.documentElement);
+    chart = new Chart($("#rate"), {
+      type: "bar",
+      data: { labels: [], datasets: [{ label: "страниц в минуту", data: [], backgroundColor: css.getPropertyValue("--accent") }] },
+      options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } },
+                 scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 } } } },
+    });
+  }
+  $("#cancel").hidden = j.status !== "running";
+  const stat = (v, l) => `<div><b>${v}</b><small>${l}</small></div>`;
+  $("#stats").innerHTML = stat(j.fetched, "страниц") + stat(j.items, "записей") + stat(j.pending, "осталось") +
+    stat(j.retries, "ретраев") + stat(j.errors, "ошибок") + stat(j.dropped, "отброшено") +
+    stat((j.bytes / 1048576).toFixed(1) + " МБ", "скачано") + stat(took + " с", "время");
+  chart.data.labels = j.rate.map(([t]) => new Date(t * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }));
+  chart.data.datasets[0].data = j.rate.map(([, n]) => n);
+  chart.update();
+  $("#sample").innerHTML = cols.length
+    ? `<thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>` +
+      j.sample.map((r) => `<tr>${cols.map((c) => `<td class="trunc" title="${esc(r[c])}">${esc(Array.isArray(r[c]) ? r[c].join(", ") : r[c])}</td>`).join("")}</tr>`).join("") + `</tbody>`
+    : `<tr><td class="empty">Записей пока нет</td></tr>`;
+  $("#dead").innerHTML = j.dead.map((d) => `<div>${esc(d.reason)} — ${esc(d.url)}</div>`).join("") || `<span class="sub">нет</span>`;
+}
+
+$("#jobs").onclick = (e) => {
+  const tr = e.target.closest("tr.job");
+  if (tr) { selected = tr.dataset.id; refresh(); }
+};
+$("#launch").onclick = async () => {
+  const { id } = await api("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spider: $("#spider").value }) });
+  selected = id; refresh();
+};
+
+refresh();
+setInterval(() => refresh().catch(console.error), 2000);
+</script>
+</body>
+</html>

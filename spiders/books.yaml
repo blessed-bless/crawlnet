@@ -1,0 +1,39 @@
+# Каталог книг на books.toscrape.com — песочница, специально сделанная для парсинга.
+name: books
+allowed_domains: [books.toscrape.com]
+start:
+  - url: https://books.toscrape.com/
+    page: catalog
+
+settings:
+  delay: 0.2
+  max_pages: 1100
+  max_depth: 60
+  user_agent: "crawlnet/0.1 (portfolio demo)"
+
+pages:
+  catalog:
+    follow:
+      - css: "article.product_pod h3 a::attr(href)"
+        page: book
+        priority: 1          # сначала карточки, потом следующая страница
+      - css: "li.next a::attr(href)"
+        page: catalog
+
+  book:
+    item:
+      key: upc
+      required: [title, upc]
+      fields:
+        title:    {css: "div.product_main h1::text"}
+        upc:      {xpath: "//th[text()='UPC']/following-sibling::td/text()"}
+        price:    {css: "p.price_color::text", regex: "[\\d.]+", type: float}
+        currency: {css: "p.price_color::text", regex: "^\\D+"}
+        in_stock: {xpath: "normalize-space(//p[contains(@class,'availability')])", regex: "\\((\\d+) available", type: int, default: 0}
+        rating:
+          css: "p.star-rating::attr(class)"
+          regex: "star-rating (\\w+)"
+          map: {One: 1, Two: 2, Three: 3, Four: 4, Five: 5}
+          type: int
+        category: {css: "ul.breadcrumb li:nth-child(3) a::text"}
+        description: {css: "#product_description + p::text"}
