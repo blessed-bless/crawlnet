@@ -155,7 +155,12 @@ def export(job_id: str, fmt: str = typer.Option("xlsx", "--format", "-f"), out: 
 @app.command()
 def dashboard(host: str = "127.0.0.1", port: int = 8000) -> None:
     """Веб-дашборд с живой статистикой."""
+    import os
+
     import uvicorn
+
+    if host not in ("127.0.0.1", "localhost", "::1") and not os.environ.get("CRAWLNET_DASHBOARD_PASSWORD"):
+        raise typer.BadParameter("дашборд слушает не только localhost — задайте CRAWLNET_DASHBOARD_PASSWORD")
 
     uvicorn.run("crawlnet.dashboard.app:app", host=host, port=port)
 

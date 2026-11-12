@@ -62,7 +62,7 @@ pip install -e ".[dev]"
 crawlnet run quotes --export xlsx
 ```
 
-Кластер в Docker: Redis, Postgres, 3 воркера и дашборд на http://localhost:8000.
+Кластер в Docker: Redis, Postgres, 3 воркера и дашборд на http://localhost:8000. Дашборд закрыт паролем: задайте `CRAWLNET_DASHBOARD_PASSWORD` в `.env`, без него контейнер дашборда не стартует.
 
 ```bash
 docker compose up -d --build

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
@@ -17,14 +20,26 @@ class Submit(BaseModel):
     spider: str
 
 
-def create_app(runtime_factory=open_runtime) -> FastAPI:
+def basic_auth(password: str):
+    """HTTP Basic: логин любой, пароль сравнивается за постоянное время."""
+    scheme = HTTPBasic(realm="crawlnet")
+
+    def check(creds: HTTPBasicCredentials = Depends(scheme)) -> None:
+        if not secrets.compare_digest(creds.password.encode(), password.encode()):
+            raise HTTPException(401, "неверный пароль", headers={"WWW-Authenticate": 'Basic realm="crawlnet"'})
+
+    return check
+
+
+def create_app(runtime_factory=open_runtime, password: str | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         async with runtime_factory() as rt:
             app.state.rt = rt
             yield
 
-    app = FastAPI(title="crawlnet", lifespan=lifespan)
+    deps = [Depends(basic_auth(password))] if password else []
+    app = FastAPI(title="crawlnet", lifespan=lifespan, dependencies=deps)
 
     def rt(request: Request) -> Runtime:
         return request.app.state.rt
@@ -81,4 +96,4 @@ def create_app(runtime_factory=open_runtime) -> FastAPI:
     return app
 
 
-app = create_app()
+app = create_app(password=os.environ.get("CRAWLNET_DASHBOARD_PASSWORD") or None)

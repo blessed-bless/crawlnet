@@ -85,7 +85,10 @@ def test_dashboard_api(tmp_path, spec):
         yield Runtime(r, Frontier(r, "d"), s, cfg)
         await s.close()
 
-    with TestClient(create_app(factory)) as c:
+    with TestClient(create_app(factory, password="s3cret")) as c:
+        assert c.get("/api/overview").status_code == 401
+        assert c.get("/api/overview", auth=("u", "wrong")).status_code == 401
+        c.auth = ("u", "s3cret")
         assert c.get("/api/overview").json()["spiders"] == ["shop"]
         job_id = c.post("/api/jobs", json={"spider": "shop"}).json()["id"]
         assert c.get(f"/api/jobs/{job_id}").json()["pending"] == 1

@@ -7,6 +7,7 @@ x-app: &app
     CRAWLNET_DB_URL: postgresql+asyncpg://crawl:crawl@postgres:5432/crawl
     CRAWLNET_TG_TOKEN: ${CRAWLNET_TG_TOKEN:-}
     CRAWLNET_TG_ALLOWED: ${CRAWLNET_TG_ALLOWED:-}
+    CRAWLNET_DASHBOARD_PASSWORD: ${CRAWLNET_DASHBOARD_PASSWORD:-}
   volumes:
     - ./spiders:/app/spiders:ro
   depends_on:
