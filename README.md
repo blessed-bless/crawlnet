@@ -1,16 +1,16 @@
 # crawlnet
 
-Распределённый краулер на asyncio: общая очередь в Redis, YAML-спайдеры без кода, SQLite/Postgres, дашборд и Telegram-бот. Для тех, кому нужны несколько воркеров на разных машинах без отдельного координатора.
+Распределённый краулер на asyncio: общая очередь в Redis, YAML-спайдеры без кода, выгрузка в CSV/Excel. Для тех, кому нужны несколько воркеров на разных машинах без отдельного координатора.
 
 {{скриншот}}
 
 ## Возможности
 
-- Общая очередь в Redis (`ZSET` по времени) с приоритетами, отложенными ретраями и вежливостью между машинами
+- Общая очередь в Redis с приоритетами, отложенными ретраями и вежливостью между машинами
 - At-least-once: `inflight` + reaper; повторный `ack` не ломает счётчики
-- `robots.txt` с кэшем, `Crawl-delay`, 401/403 как закрытый сайт (RFC 9309)
+- `robots.txt` с кэшем и `Crawl-delay`; 401/403 как закрытый сайт
 - Дедуп по каноническому URL, upsert по `(spider, key)` с версиями при изменении данных
-- YAML-спайдеры, экспорт CSV/Excel, веб-дашборд и Telegram-бот
+- YAML-спайдеры, веб-дашборд и Telegram-бот
 - Локальный режим без инфраструктуры (очередь в памяти, SQLite)
 
 ## Архитектура
@@ -30,36 +30,18 @@ Python 3.12 · asyncio · Redis · httpx · parsel · SQLAlchemy · FastAPI · a
 
 ## Запуск
 
-Без инфраструктуры:
+Без Docker (очередь в памяти, SQLite):
 
 ```bash
+git clone https://github.com/blessed-bless/crawlnet.git
+cd crawlnet
 pip install -e ".[dev]"
-make run
-# или: crawlnet run quotes --export xlsx
+crawlnet run quotes --export xlsx
 ```
 
-Кластер в Docker (дашборд на http://localhost:8000). Задайте `CRAWLNET_DASHBOARD_PASSWORD` в `.env`, иначе контейнер дашборда не стартует наружу:
+Кластер: `cp .env.example .env`, задай `CRAWLNET_DASHBOARD_PASSWORD`, затем `docker compose up -d --build`.
 
-```bash
-cp .env.example .env
-docker compose up -d --build
-docker compose exec worker crawlnet submit books
-docker compose up -d --scale worker=6
-docker compose --profile bot up -d   # нужен CRAWLNET_TG_TOKEN
-```
-
-| команда | что делает |
-|---|---|
-| `crawlnet submit <spider>` | поставить задачу в общую очередь |
-| `crawlnet worker -c 16` | воркер с 16 параллельными запросами |
-| `crawlnet jobs` / `cancel <id>` | список и отмена |
-| `crawlnet export <id> -f csv\|xlsx` | выгрузка |
-| `crawlnet validate <file.yaml>` | проверить спайдер |
-| `crawlnet dashboard` / `bot` | веб и Telegram |
-
-Тесты и стиль: `make test`, `make lint`, `make fmt`.
-
-## Конфиг
+## Конфигурация
 
 | Переменная | Назначение |
 | --- | --- |
@@ -67,17 +49,12 @@ docker compose --profile bot up -d   # нужен CRAWLNET_TG_TOKEN
 | `CRAWLNET_DB_URL` | Async SQLAlchemy URL результатов |
 | `CRAWLNET_SPIDERS_DIR` | Каталог YAML-спайдеров |
 | `CRAWLNET_PREFIX` | Префикс ключей Redis |
-| `CRAWLNET_INFLIGHT_TIMEOUT` | Таймаут claim до reclaim |
-| `CRAWLNET_TG_TOKEN` / `CRAWLNET_TG_ALLOWED` | Telegram-бот и allow-list |
+| `CRAWLNET_INFLIGHT_TIMEOUT` | Таймаут claim до reclaim (сек) |
+| `CRAWLNET_TG_TOKEN` | Токен Telegram-бота |
+| `CRAWLNET_TG_ALLOWED` | Allow-list user id через запятую |
 | `CRAWLNET_DASHBOARD_PASSWORD` | HTTP Basic для дашборда |
 
 Полный список — в `.env.example`. Пример спайдера: [spiders/quotes.yaml](spiders/quotes.yaml).
-
-## Ограничения
-
-- Только статический HTML (JS — отдельный Playwright-fetcher).
-- `seen:{job}` — SET; для сотен миллионов URL лучше Bloom.
-- `ZPOPMIN` и запись в `inflight` — две команды; падение между ними закрывается Lua.
 
 ## Автор
 
