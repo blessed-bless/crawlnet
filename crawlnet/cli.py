@@ -14,7 +14,9 @@ from .runtime import open_runtime
 from .spec import SpiderSpec
 from .worker import Worker
 
-app = typer.Typer(help="crawlnet — распределённый краулер", no_args_is_help=True, add_completion=False)
+app = typer.Typer(
+    help="crawlnet — распределённый краулер", no_args_is_help=True, add_completion=False
+)
 
 
 def _logging(verbose: bool) -> None:
@@ -39,11 +41,15 @@ def _fmt_job(j: dict) -> str:
 def validate(spider: Path) -> None:
     """Проверить YAML-спайдер."""
     spec = SpiderSpec.from_file(spider)
-    typer.echo(f"OK: {spec.name}, типов страниц: {len(spec.pages)}, стартовых URL: {len(spec.start)}")
+    typer.echo(
+        f"OK: {spec.name}, типов страниц: {len(spec.pages)}, стартовых URL: {len(spec.start)}"
+    )
 
 
 @app.command()
-def submit(spider: str = typer.Argument(..., help="имя из каталога spiders/ или путь к YAML")) -> None:
+def submit(
+    spider: str = typer.Argument(..., help="имя из каталога spiders/ или путь к YAML"),
+) -> None:
     """Поставить задачу в общую очередь (её подхватят воркеры)."""
 
     async def main():
@@ -83,7 +89,9 @@ def run(
     spider: str,
     concurrency: int = typer.Option(8, "-c"),
     export: str | None = typer.Option(None, "--export", "-e", help="csv или xlsx"),
-    local: bool = typer.Option(True, "--local/--redis", help="очередь в памяти или в настоящем Redis"),
+    local: bool = typer.Option(
+        True, "--local/--redis", help="очередь в памяти или в настоящем Redis"
+    ),
     verbose: bool = typer.Option(False, "-v"),
 ) -> None:
     """Прогнать спайдер целиком в одном процессе и дождаться конца."""
@@ -139,7 +147,11 @@ def cancel(job_id: str) -> None:
 
 
 @app.command()
-def export(job_id: str, fmt: str = typer.Option("xlsx", "--format", "-f"), out: Path | None = typer.Option(None, "-o")) -> None:
+def export(
+    job_id: str,
+    fmt: str = typer.Option("xlsx", "--format", "-f"),
+    out: Path | None = typer.Option(None, "-o"),
+) -> None:
     """Выгрузить результаты задачи в CSV или Excel."""
 
     async def main():
@@ -159,8 +171,12 @@ def dashboard(host: str = "127.0.0.1", port: int = 8000) -> None:
 
     import uvicorn
 
-    if host not in ("127.0.0.1", "localhost", "::1") and not os.environ.get("CRAWLNET_DASHBOARD_PASSWORD"):
-        raise typer.BadParameter("дашборд слушает не только localhost — задайте CRAWLNET_DASHBOARD_PASSWORD")
+    if host not in ("127.0.0.1", "localhost", "::1") and not os.environ.get(
+        "CRAWLNET_DASHBOARD_PASSWORD"
+    ):
+        raise typer.BadParameter(
+            "дашборд слушает не только localhost — задайте CRAWLNET_DASHBOARD_PASSWORD"
+        )
 
     uvicorn.run("crawlnet.dashboard.app:app", host=host, port=port)
 

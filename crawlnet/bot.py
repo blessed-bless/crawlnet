@@ -1,4 +1,5 @@
-"""Telegram-бот: запуск спайдеров, статус, выгрузка файлов, уведомление о завершении."""
+"""Telegram bot: start spiders, status, file export, completion notify."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,7 +8,13 @@ import logging
 
 from aiogram import BaseMiddleware, Bot, Dispatcher, F
 from aiogram.filters import Command, CommandObject
-from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from .config import settings
 from .frontier import RUNNING
@@ -17,7 +24,7 @@ log = logging.getLogger("crawlnet.bot")
 
 
 class AllowList(BaseMiddleware):
-    """Пускает только пользователей из CRAWLNET_TG_ALLOWED; пустой список — не пускает никого."""
+    """Allow only CRAWLNET_TG_ALLOWED users; empty list allows nobody."""
 
     async def __call__(self, handler, event, data):
         user = data.get("event_from_user")
@@ -54,7 +61,9 @@ def build_dispatcher(rt: Runtime) -> Dispatcher:
         while (j := await rt.frontier.job(job_id)) and j["status"] == RUNNING:
             await asyncio.sleep(5)
         if j:
-            await bot.send_message(chat_id, "Готово ✅\n" + job_text(j), reply_markup=job_kb(job_id, False))
+            await bot.send_message(
+                chat_id, "Готово ✅\n" + job_text(j), reply_markup=job_kb(job_id, False)
+            )
 
     @dp.message(Command("start", "help"))
     async def help_(m: Message):
@@ -66,7 +75,11 @@ def build_dispatcher(rt: Runtime) -> Dispatcher:
     @dp.message(Command("spiders"))
     async def spiders(m: Message):
         names = sorted(rt.spider_files())
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"▶ {n}", callback_data=f"run:{n}")] for n in names])
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=f"▶ {n}", callback_data=f"run:{n}")] for n in names
+            ]
+        )
         await m.answer("Спайдеры:" if names else "Каталог спайдеров пуст", reply_markup=kb)
 
     async def launch(bot: Bot, chat_id: int, name: str) -> str:

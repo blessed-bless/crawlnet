@@ -1,4 +1,5 @@
-"""Декларативное описание спайдера (YAML) и извлечение полей."""
+"""Declarative spider YAML and field extraction."""
+
 from __future__ import annotations
 
 import re
@@ -18,7 +19,7 @@ class FieldSpec(BaseModel):
     many: bool = False
     default: Any = None
     map: dict[str, Any] | None = None
-    join: str | None = None  # склеить все совпадения в одну строку
+    join: str | None = None  # join all matches into one string
 
     @model_validator(mode="after")
     def _one_selector(self) -> FieldSpec:
@@ -33,7 +34,7 @@ class FollowRule(BaseModel):
     css: str | None = None
     xpath: str | None = None
     page: str
-    pattern: str | None = None  # фильтр URL по регулярке
+    pattern: str | None = None  # URL filter regex
     priority: int = 0
 
     @model_validator(mode="after")
@@ -44,8 +45,8 @@ class FollowRule(BaseModel):
 
 
 class ItemSpec(BaseModel):
-    each: str | None = None  # CSS-блок, если записей на странице несколько; поля ищутся внутри него
-    key: str | None = None  # поле-идентификатор для upsert; по умолчанию URL
+    each: str | None = None  # CSS block when a page has many items; fields resolve inside it
+    key: str | None = None  # upsert identity field; defaults to URL
     required: list[str] = Field(default_factory=list)
     fields: dict[str, FieldSpec]
 
@@ -70,7 +71,7 @@ class StartUrl(BaseModel):
 
 
 class SpiderSettings(BaseModel):
-    delay: float = 1.0  # минимальный интервал между запросами к одному домену, сек
+    delay: float = 1.0  # min seconds between requests to one domain
     max_pages: int = 1000
     max_depth: int = 10
     max_retries: int = 3
@@ -95,7 +96,9 @@ class SpiderSpec(BaseModel):
 
     @model_validator(mode="after")
     def _pages_exist(self) -> SpiderSpec:
-        refs = [s.page for s in self.start] + [f.page for p in self.pages.values() for f in p.follow]
+        refs = [s.page for s in self.start] + [
+            f.page for p in self.pages.values() for f in p.follow
+        ]
         missing = sorted(set(refs) - self.pages.keys())
         if missing:
             raise ValueError(f"неизвестные типы страниц: {missing}")
@@ -116,7 +119,12 @@ class SpiderSpec(BaseModel):
         return cls.from_yaml(Path(path).read_text(encoding="utf-8"))
 
 
-_CASTS = {"str": str, "int": int, "float": float, "bool": lambda v: str(v).strip().lower() in {"1", "true", "yes", "да"}}
+_CASTS = {
+    "str": str,
+    "int": int,
+    "float": float,
+    "bool": lambda v: str(v).strip().lower() in {"1", "true", "yes", "да"},
+}
 
 
 def _convert(raw: str, spec: FieldSpec) -> Any:
@@ -162,7 +170,7 @@ def extract_item(sel: Selector, item: ItemSpec) -> dict[str, Any]:
 
 
 def extract_items(sel: Selector, item: ItemSpec) -> tuple[list[dict[str, Any]], int]:
-    """Все записи страницы и число отброшенных невалидных."""
+    """All page items plus count of dropped invalid ones."""
     blocks = sel.css(item.each) if item.each else [sel]
     out, bad = [], 0
     for b in blocks:

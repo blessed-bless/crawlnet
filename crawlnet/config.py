@@ -1,26 +1,45 @@
-import os
-from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-def _env(name: str, default: str) -> str:
-    return os.environ.get(name, default)
 
-
-@dataclass(frozen=True)
-class Settings:
-    redis_url: str = field(default_factory=lambda: _env("CRAWLNET_REDIS_URL", "redis://localhost:6379/0"))
-    db_url: str = field(default_factory=lambda: _env("CRAWLNET_DB_URL", "sqlite+aiosqlite:///crawlnet.db"))
-    spiders_dir: Path = field(default_factory=lambda: Path(_env("CRAWLNET_SPIDERS_DIR", "spiders")))
-    prefix: str = field(default_factory=lambda: _env("CRAWLNET_PREFIX", "cn"))
-    tg_token: str = field(default_factory=lambda: _env("CRAWLNET_TG_TOKEN", ""))
-    tg_allowed: frozenset[int] = field(
-        default_factory=lambda: frozenset(
-            int(x) for x in _env("CRAWLNET_TG_ALLOWED", "").replace(" ", "").split(",") if x
-        )
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="CRAWLNET_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
     )
-    # сколько секунд запрос может висеть «в работе», прежде чем его заберёт другой воркер
-    inflight_timeout: float = field(default_factory=lambda: float(_env("CRAWLNET_INFLIGHT_TIMEOUT", "120")))
+
+    redis_url: str = "redis://localhost:6379/0"
+    db_url: str = "sqlite+aiosqlite:///crawlnet.db"
+    spiders_dir: Path = Path("spiders")
+    prefix: str = "cn"
+    tg_token: str = ""
+    tg_allowed: frozenset[int] = Field(default_factory=frozenset)
+    # How long a claim may stay in inflight before another worker may reclaim it
+    inflight_timeout: float = 120.0
+
+    @field_validator("tg_allowed", mode="before")
+    @classmethod
+    def _parse_tg_allowed(cls, value: object) -> frozenset[int]:
+        if value is None or value == "":
+            return frozenset()
+        if isinstance(value, frozenset):
+            return value
+        if isinstance(value, (set, list, tuple)):
+            return frozenset(int(x) for x in value)
+        text = str(value).replace(" ", "")
+        if not text:
+            return frozenset()
+        return frozenset(int(part) for part in text.split(",") if part)
 
 
-settings = Settings()
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()

@@ -1,4 +1,5 @@
-"""Воркер: N корутин тянут запросы из общей очереди, качают, парсят, складывают."""
+"""Worker: N coroutines pull from the shared queue, fetch, parse, store."""
+
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +27,7 @@ HTML_TYPES = ("text/html", "application/xhtml")
 
 
 def backoff(attempt: int, base: float = 1.0, cap: float = 60.0) -> float:
-    """Экспоненциальная задержка с «полным джиттером»."""
+    """Exponential backoff with full jitter."""
     return random.uniform(0, min(cap, base * 2**attempt))
 
 
@@ -66,7 +67,7 @@ class Worker:
         await self.client.aclose()
 
     async def run(self, until_idle: bool = False) -> None:
-        """until_idle=True — выйти, когда очередь опустеет (локальный режим и тесты)."""
+        """until_idle=True exits when the queue drains (local mode and tests)."""
         service = [asyncio.create_task(self._housekeeping())]
         slots = [asyncio.create_task(self._loop(until_idle)) for _ in range(self.concurrency)]
         try:
@@ -80,7 +81,9 @@ class Worker:
     async def _housekeeping(self) -> None:
         while not self._stop.is_set():
             with contextlib.suppress(Exception):
-                await self.f.heartbeat(self.id, {"concurrency": self.concurrency, "processed": self.processed})
+                await self.f.heartbeat(
+                    self.id, {"concurrency": self.concurrency, "processed": self.processed}
+                )
                 if moved := await self.f.reap():
                     log.warning("reaper вернул в очередь %d зависших запросов", moved)
             with contextlib.suppress(asyncio.TimeoutError):
@@ -98,12 +101,14 @@ class Worker:
                 else:
                     idle_since = None
                 wait = await self.f.next_ready_in()
-                await asyncio.sleep(min(wait if wait is not None else 0.5, 0.5) + random.uniform(0, 0.05))
+                await asyncio.sleep(
+                    min(wait if wait is not None else 0.5, 0.5) + random.uniform(0, 0.05)
+                )
                 continue
             idle_since = None
             try:
                 await self.process(req)
-            except Exception as e:  # воркер не должен падать из-за одной страницы
+            except Exception as e:  # one bad page must not kill the worker
                 log.exception("ошибка при обработке %s", req.url)
                 await self.f.fail(req, f"internal: {e!r}")
             self.processed += 1
@@ -131,7 +136,9 @@ class Worker:
             return
 
         try:
-            resp = await self.client.get(req.url, headers={"User-Agent": s.user_agent}, timeout=s.timeout)
+            resp = await self.client.get(
+                req.url, headers={"User-Agent": s.user_agent}, timeout=s.timeout
+            )
         except httpx.HTTPError as e:
             await self._retry_or_fail(req, spec, f"{type(e).__name__}: {e}")
             return
@@ -172,9 +179,13 @@ class Worker:
             for link in extract_links(sel, rule):
                 nxt = canonicalize(link, base=url)
                 if nxt and spec.domain_allowed(host_of(nxt).split(":")[0]):
-                    await self.f.enqueue(req.job_id, nxt, rule.page, req.depth + 1, delay=-rule.priority)
+                    await self.f.enqueue(
+                        req.job_id, nxt, rule.page, req.depth + 1, delay=-rule.priority
+                    )
 
-    async def _retry_or_fail(self, req: Request, spec: SpiderSpec, reason: str, after: float | None = None) -> None:
+    async def _retry_or_fail(
+        self, req: Request, spec: SpiderSpec, reason: str, after: float | None = None
+    ) -> None:
         if req.attempt < spec.settings.max_retries:
             delay = after if after is not None else backoff(req.attempt)
             log.info("ретрай %s через %.1fс (%s)", req.url, delay, reason)

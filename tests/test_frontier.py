@@ -38,7 +38,7 @@ async def test_reaper_returns_lost_requests(frontier, spec, redis):
     await frontier.create_job(spec)
     req = await frontier.pop()
     assert await frontier.pop() is None
-    # «воркер умер»: сдвигаем дедлайн в прошлое
+    # Simulate a dead worker: push the claim deadline into the past
     await redis.zadd(frontier.k("inflight"), {req.dumps(): time.time() - 1})
     assert await frontier.reap() == 1
     assert (await frontier.pop()) == req

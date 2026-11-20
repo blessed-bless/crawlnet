@@ -39,7 +39,7 @@ async def test_full_crawl(shop, frontier, storage, spec):
     assert j["dropped"] == 1  # /private/ закрыт в robots.txt
     assert {c.request.url.host for c in shop.calls} == {"shop.test"}  # внешний домен не трогали
     assert [d["reason"] for d in await frontier.dead(job)] == ["HTTP 404"]
-    # /p/2 и /p/2?utm_source=x — один URL после канонизации
+    # /p/2 and /p/2?utm_source=x are one URL after canonicalize
     assert sum(1 for c in shop.calls if c.request.url.path == "/p/2") == 1
 
 
@@ -76,7 +76,9 @@ def test_dashboard_api(tmp_path, spec):
     from crawlnet.storage import Storage
 
     (tmp_path / "shop.yaml").write_text(spec.model_dump_json(), encoding="utf-8")
-    cfg = Settings(db_url=f"sqlite+aiosqlite:///{tmp_path / 'd.db'}", spiders_dir=tmp_path, prefix="d")
+    cfg = Settings(
+        db_url=f"sqlite+aiosqlite:///{tmp_path / 'd.db'}", spiders_dir=tmp_path, prefix="d"
+    )
 
     @asynccontextmanager
     async def factory():

@@ -1,17 +1,18 @@
-"""Общая для всех воркеров очередь запросов в Redis.
+"""Shared Redis request queue used by every worker.
 
-Ключи (prefix = cn):
+Keys (prefix = cn):
   cn:jobs              ZSET  job_id -> created_ts
-  cn:job:{id}          HASH  метаданные и счётчики задачи
-  cn:spec:{id}         STR   снимок спецификации спайдера (JSON)
-  cn:seen:{id}         SET   отпечатки уже поставленных URL — дедуп
-  cn:frontier          ZSET  запрос -> время, когда его можно брать
-  cn:inflight          ZSET  запрос -> дедлайн; просроченные возвращает reaper
-  cn:slot:{host}       STR   «замок» вежливости: один запрос к хосту за delay
-  cn:dead:{id}         LIST  запросы, исчерпавшие ретраи
-  cn:rate:{id}         HASH  минута -> число скачанных страниц
+  cn:job:{id}          HASH  job metadata and counters
+  cn:spec:{id}         STR   spider spec snapshot (JSON)
+  cn:seen:{id}         SET   fingerprints of enqueued URLs (dedupe)
+  cn:frontier          ZSET  request -> ready-at timestamp
+  cn:inflight          ZSET  request -> claim deadline; reaper returns expired ones
+  cn:slot:{host}       STR   politeness lock: one request per host per delay
+  cn:dead:{id}         LIST  requests that exhausted retries
+  cn:rate:{id}         HASH  minute -> pages fetched
   cn:workers           HASH  worker_id -> heartbeat JSON
 """
+
 from __future__ import annotations
 
 import json
@@ -51,15 +52,21 @@ class Frontier:
         self.inflight_timeout = inflight_timeout
         self._specs: dict[str, SpiderSpec] = {}
 
-    # --- ключи -------------------------------------------------------------
+    # --- keys --------------------------------------------------------------
     def k(self, *parts: str) -> str:
         return ":".join((self.p, *parts))
 
-    # --- задачи ------------------------------------------------------------
+    # --- jobs --------------------------------------------------------------
     async def create_job(self, spec: SpiderSpec) -> str:
         job_id = uuid.uuid4().hex[:12]
         now = time.time()
-        meta = {"id": job_id, "spider": spec.name, "status": RUNNING, "created": now, **dict.fromkeys(COUNTERS, 0)}
+        meta = {
+            "id": job_id,
+            "spider": spec.name,
+            "status": RUNNING,
+            "created": now,
+            **dict.fromkeys(COUNTERS, 0),
+        }
         async with self.r.pipeline(transaction=True) as pipe:
             pipe.set(self.k("spec", job_id), spec.model_dump_json())
             pipe.hset(self.k("job", job_id), mapping=meta)
@@ -102,7 +109,9 @@ class Frontier:
     async def cancel(self, job_id: str) -> bool:
         if await self.status(job_id) != RUNNING:
             return False
-        await self.r.hset(self.k("job", job_id), mapping={"status": CANCELLED, "finished": time.time()})
+        await self.r.hset(
+            self.k("job", job_id), mapping={"status": CANCELLED, "finished": time.time()}
+        )
         return True
 
     async def incr(self, job_id: str, field: str, by: int = 1) -> int:
@@ -127,12 +136,16 @@ class Frontier:
         return int(await self.r.hget(self.k("job", job_id), field) or 0)
 
     async def _finish(self, job_id: str) -> None:
-        # завершаем только «живую» задачу; отменённая сохраняет свой статус
+        # Finish only a live job; cancelled keeps its status
         if await self.status(job_id) == RUNNING:
-            await self.r.hset(self.k("job", job_id), mapping={"status": FINISHED, "finished": time.time()})
+            await self.r.hset(
+                self.k("job", job_id), mapping={"status": FINISHED, "finished": time.time()}
+            )
 
-    # --- очередь -----------------------------------------------------------
-    async def enqueue(self, job_id: str, url: str, page: str, depth: int, delay: float = 0.0) -> bool:
+    # --- queue -------------------------------------------------------------
+    async def enqueue(
+        self, job_id: str, url: str, page: str, depth: int, delay: float = 0.0
+    ) -> bool:
         spec = await self.spec(job_id)
         if spec is None or await self.status(job_id) != RUNNING:
             return False
@@ -150,14 +163,14 @@ class Frontier:
         return True
 
     async def pop(self) -> Request | None:
-        """Атомарно берёт самый ранний созревший запрос и помечает его «в работе»."""
+        """Atomically take the earliest ready request and mark it in-flight."""
         got = await self.r.zpopmin(self.k("frontier"), 1)
         if not got:
             return None
         member, score = got[0]
         now = time.time()
         if score > now:
-            # самый ранний запрос ещё не созрел — возвращаем на место
+            # Earliest request is not ready yet — put it back
             await self.r.zadd(self.k("frontier"), {member: score})
             return None
         await self.r.zadd(self.k("inflight"), {member: now + self.inflight_timeout})
@@ -188,14 +201,22 @@ class Frontier:
             pipe.hincrby(self.k("job", req.job_id), "pending", -1)
             removed, pending = await pipe.execute()
         if not removed:
-            # запрос уже вернул reaper и, возможно, обработал другой воркер — не считаем дважды
+            # Reaper already returned it; another worker may have handled it — undo double count
             await self.incr(req.job_id, "pending", 1)
             return
         if pending <= 0:
             await self._finish(req.job_id)
 
     async def fail(self, req: Request, reason: str) -> None:
-        entry = json.dumps({"url": req.url, "page": req.page, "attempt": req.attempt, "reason": reason, "ts": time.time()})
+        entry = json.dumps(
+            {
+                "url": req.url,
+                "page": req.page,
+                "attempt": req.attempt,
+                "reason": reason,
+                "ts": time.time(),
+            }
+        )
         async with self.r.pipeline(transaction=False) as pipe:
             pipe.rpush(self.k("dead", req.job_id), entry)
             pipe.hincrby(self.k("job", req.job_id), "errors", 1)
@@ -207,7 +228,7 @@ class Frontier:
         await self.ack(req)
 
     async def reap(self) -> int:
-        """Возвращает в очередь запросы, чей воркер умер, не успев их подтвердить."""
+        """Return requests whose worker died before acknowledging them."""
         now = time.time()
         expired = await self.r.zrangebyscore(self.k("inflight"), "-inf", now, start=0, num=500)
         moved = 0
@@ -218,7 +239,7 @@ class Frontier:
         return moved
 
     async def acquire_slot(self, host: str, delay: float) -> float:
-        """Вежливость: 0 — можно идти; иначе сколько секунд ждать."""
+        """Politeness: 0 means go now; otherwise seconds to wait."""
         if delay <= 0:
             return 0.0
         if await self.r.set(self.k("slot", host), "1", nx=True, px=int(delay * 1000)):
@@ -227,9 +248,11 @@ class Frontier:
         return max(ttl, 50) / 1000
 
     async def is_idle(self) -> bool:
-        return not await self.r.zcard(self.k("frontier")) and not await self.r.zcard(self.k("inflight"))
+        return not await self.r.zcard(self.k("frontier")) and not await self.r.zcard(
+            self.k("inflight")
+        )
 
-    # --- воркеры -----------------------------------------------------------
+    # --- workers -----------------------------------------------------------
     async def heartbeat(self, worker_id: str, info: dict) -> None:
         await self.r.hset(self.k("workers"), worker_id, json.dumps({**info, "ts": time.time()}))
 
@@ -245,7 +268,10 @@ class Frontier:
         return sorted(out, key=lambda w: w["id"])
 
     async def queue_sizes(self) -> dict[str, int]:
-        return {"frontier": await self.r.zcard(self.k("frontier")), "inflight": await self.r.zcard(self.k("inflight"))}
+        return {
+            "frontier": await self.r.zcard(self.k("frontier")),
+            "inflight": await self.r.zcard(self.k("inflight")),
+        }
 
 
 def _s(v: bytes | str) -> str:

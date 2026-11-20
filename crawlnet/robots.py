@@ -1,4 +1,5 @@
-"""robots.txt: кэш в Redis (общий для воркеров) + разобранные парсеры в памяти."""
+"""robots.txt: Redis cache shared by workers plus in-memory parsers."""
+
 from __future__ import annotations
 
 import time
@@ -36,17 +37,19 @@ class RobotsCache:
 
     async def _download(self, origin: str, user_agent: str) -> str:
         try:
-            resp = await self.client.get(f"{origin}/robots.txt", headers={"User-Agent": user_agent}, timeout=10)
+            resp = await self.client.get(
+                f"{origin}/robots.txt", headers={"User-Agent": user_agent}, timeout=10
+            )
         except httpx.HTTPError:
             return _ALLOW_ALL
         if resp.status_code in (401, 403):
-            return _DENY_ALL  # как в RFC 9309: доступ закрыт — не ходим
+            return _DENY_ALL  # RFC 9309: 401/403 means the site is closed
         if resp.status_code >= 400:
             return _ALLOW_ALL
         return resp.text
 
     async def check(self, url: str, user_agent: str) -> tuple[bool, float | None]:
-        """(можно ли качать, Crawl-delay если задан)."""
+        """(allowed, Crawl-delay if set)."""
         parts = urlsplit(url)
         rp = await self._parser(f"{parts.scheme}://{parts.netloc}", user_agent)
         delay = rp.crawl_delay(user_agent)

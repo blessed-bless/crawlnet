@@ -1,4 +1,5 @@
-"""Сборка зависимостей: Redis, очередь, хранилище, каталог спайдеров."""
+"""Wire Redis, frontier, storage, and the spider catalog."""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -25,7 +26,7 @@ class Runtime:
         return {p.stem: p for p in sorted(d.glob("*.y*ml"))} if d.is_dir() else {}
 
     def load_spider(self, name: str, *, allow_path: bool = False) -> SpiderSpec:
-        """По имени из каталога. Произвольный путь — только для CLI (allow_path=True)."""
+        """Load by catalog name. Arbitrary path only for CLI (allow_path=True)."""
         if allow_path and Path(name).is_file():
             return SpiderSpec.from_file(name)
         files = self.spider_files()
@@ -46,7 +47,7 @@ class Runtime:
 
 @asynccontextmanager
 async def open_runtime(cfg: Settings = settings, *, local: bool = False):
-    """local=True — Redis в памяти процесса (fakeredis): для демо без инфраструктуры."""
+    """local=True uses in-process fakeredis for demos without infra."""
     if local:
         from fakeredis import FakeAsyncRedis
 
