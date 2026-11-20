@@ -66,21 +66,30 @@ async def storage(tmp_path):
 
 @pytest.fixture
 def shop():
-    """Маленький магазин: 2 страницы каталога, 4 товара, битая ссылка, внешняя ссылка, 503 и 404."""
+    """Tiny shop: 2 catalog pages, 4 items, broken link, external link, 503 and 404."""
     with respx.mock(base_url=SHOP, assert_all_called=False) as mock:
         mock.get("/robots.txt").respond(200, text="User-agent: *\nDisallow: /private/\n")
-        mock.get("/", params={"page": "2"}).mock(return_value=page(
-            '<a class="item" href="/p/3">3</a><a class="item" href="/p/404">404</a><a class="item" href="/p/bad">bad</a>'
-        ))
-        mock.get("/").mock(return_value=page(
-            '<a class="item" href="/p/1">1</a><a class="item" href="/p/2?utm_source=x">2</a>'
-            '<a class="item" href="/p/2">2 dup</a><a class="item" href="https://evil.test/p/9">ext</a>'
-            '<a class="item" href="/private/secret">no</a><a class="next" href="/?page=2">next</a>'
-        ))
+        mock.get("/", params={"page": "2"}).mock(
+            return_value=page(
+                '<a class="item" href="/p/3">3</a><a class="item" href="/p/404">404</a><a class="item" href="/p/bad">bad</a>'
+            )
+        )
+        mock.get("/").mock(
+            return_value=page(
+                '<a class="item" href="/p/1">1</a><a class="item" href="/p/2?utm_source=x">2</a>'
+                '<a class="item" href="/p/2">2 dup</a><a class="item" href="https://evil.test/p/9">ext</a>'
+                '<a class="item" href="/private/secret">no</a><a class="next" href="/?page=2">next</a>'
+            )
+        )
         mock.get("/p/1").mock(return_value=page(item_html("A-1", "Чайник")))
         mock.get("/p/2").mock(return_value=page(item_html("A-2", "Кружка", "350 ₽")))
-        # первый запрос — 503, второй — успех: проверяем ретраи
-        mock.get("/p/3").mock(side_effect=[httpx.Response(503, headers={"Retry-After": "0"}), page(item_html("A-3", "Ложка"))])
+        # First response 503, second OK — exercises retries
+        mock.get("/p/3").mock(
+            side_effect=[
+                httpx.Response(503, headers={"Retry-After": "0"}),
+                page(item_html("A-3", "Ложка")),
+            ]
+        )
         mock.get("/p/404").respond(404)
         mock.get("/p/bad").mock(return_value=page("<h1>без артикула</h1>"))
         yield mock

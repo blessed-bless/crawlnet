@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import FileResponse, Response
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
 from ..runtime import Runtime, open_runtime
@@ -21,12 +21,14 @@ class Submit(BaseModel):
 
 
 def basic_auth(password: str):
-    """HTTP Basic: логин любой, пароль сравнивается за постоянное время."""
+    """HTTP Basic: any username; password compared in constant time."""
     scheme = HTTPBasic(realm="crawlnet")
 
     def check(creds: HTTPBasicCredentials = Depends(scheme)) -> None:
         if not secrets.compare_digest(creds.password.encode(), password.encode()):
-            raise HTTPException(401, "неверный пароль", headers={"WWW-Authenticate": 'Basic realm="crawlnet"'})
+            raise HTTPException(
+                401, "неверный пароль", headers={"WWW-Authenticate": 'Basic realm="crawlnet"'}
+            )
 
     return check
 
@@ -67,7 +69,8 @@ def create_app(runtime_factory=open_runtime, password: str | None = None) -> Fas
             "rate": await r.frontier.rate(job_id),
             "dead": await r.frontier.dead(job_id, 50),
             "sample": [
-                {"url": x["url"], **x["data"]} for x in await r.storage.fetch(job_id=job_id, limit=20)
+                {"url": x["url"], **x["data"]}
+                for x in await r.storage.fetch(job_id=job_id, limit=20)
             ],
         }
 
@@ -91,7 +94,9 @@ def create_app(runtime_factory=open_runtime, password: str | None = None) -> Fas
             data, mime, name = await r.export(job_id, format)
         except KeyError:
             raise HTTPException(404, "нет такой задачи") from None
-        return Response(data, media_type=mime, headers={"Content-Disposition": f'attachment; filename="{name}"'})
+        return Response(
+            data, media_type=mime, headers={"Content-Disposition": f'attachment; filename="{name}"'}
+        )
 
     return app
 

@@ -21,20 +21,36 @@ def test_canonicalize(raw, base, expected):
     assert canonicalize(raw, base) == expected
 
 
-SEL = Selector(text='<p class="p">Цена: 12 345,50 ₽</p><p class="r">star-rating Four</p><a>x</a><a>y</a>')
+SEL = Selector(
+    text='<p class="p">Цена: 12 345,50 ₽</p><p class="r">star-rating Four</p><a>x</a><a>y</a>'
+)
 
 
 def test_field_regex_and_types():
-    assert extract_field(SEL, FieldSpec(css=".p::text", regex=r"[\d\s,]+\d", type="float")) == 12345.5
-    assert extract_field(SEL, FieldSpec(css=".r::text", regex=r"star-rating (\w+)", map={"Four": 4}, type="int")) == 4
+    assert (
+        extract_field(SEL, FieldSpec(css=".p::text", regex=r"[\d\s,]+\d", type="float")) == 12345.5
+    )
+    assert (
+        extract_field(
+            SEL, FieldSpec(css=".r::text", regex=r"star-rating (\w+)", map={"Four": 4}, type="int")
+        )
+        == 4
+    )
     assert extract_field(SEL, FieldSpec(css="a::text", many=True)) == ["x", "y"]
     assert extract_field(SEL, FieldSpec(css="a::text", join="|")) == "x|y"
     assert extract_field(SEL, FieldSpec(css=".none::text", default="—")) == "—"
 
 
 def test_each_and_required():
-    sel = Selector(text='<div class="q"><b>1</b><i>a</i></div><div class="q"><i>b</i></div><div class="q"><b>3</b></div>')
-    spec = ItemSpec(each="div.q", key="n", required=["n"], fields={"n": FieldSpec(css="b::text", type="int"), "t": FieldSpec(css="i::text")})
+    sel = Selector(
+        text='<div class="q"><b>1</b><i>a</i></div><div class="q"><i>b</i></div><div class="q"><b>3</b></div>'
+    )
+    spec = ItemSpec(
+        each="div.q",
+        key="n",
+        required=["n"],
+        fields={"n": FieldSpec(css="b::text", type="int"), "t": FieldSpec(css="i::text")},
+    )
     items, bad = extract_items(sel, spec)
     assert items == [{"n": 1, "t": "a"}, {"n": 3, "t": None}]
     assert bad == 1

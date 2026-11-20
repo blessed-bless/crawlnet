@@ -6,7 +6,7 @@ _TRACKING = ("utm_", "fbclid", "gclid", "yclid")
 
 
 def canonicalize(url: str, base: str | None = None) -> str | None:
-    """Приводит URL к каноничному виду, чтобы дубликаты давали один отпечаток."""
+    """Canonicalize URL so duplicates share one fingerprint."""
     if base:
         url = urljoin(base, url)
     parts = urlsplit(url.strip())
@@ -17,7 +17,9 @@ def canonicalize(url: str, base: str | None = None) -> str | None:
     if parts.port and parts.port != _DEFAULT_PORTS[scheme]:
         host = f"{host}:{parts.port}"
     query = sorted(
-        (k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if not k.lower().startswith(_TRACKING)
+        (k, v)
+        for k, v in parse_qsl(parts.query, keep_blank_values=True)
+        if not k.lower().startswith(_TRACKING)
     )
     path = parts.path or "/"
     return urlunsplit((scheme, host, path, urlencode(query), ""))

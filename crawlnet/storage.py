@@ -1,4 +1,5 @@
-"""Хранилище результатов (SQLite локально, PostgreSQL в docker) и экспорт."""
+"""Result storage (SQLite locally, PostgreSQL in Docker) and export."""
+
 from __future__ import annotations
 
 import csv
@@ -8,7 +9,18 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, Column, DateTime, Integer, MetaData, String, Table, UniqueConstraint, func, select
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    UniqueConstraint,
+    func,
+    select,
+)
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 metadata = MetaData()
@@ -48,27 +60,44 @@ class Storage:
             from sqlalchemy.dialects.sqlite import insert
         return insert
 
-    async def save_item(self, spider: str, job_id: str, url: str, key: str, data: dict[str, Any]) -> None:
-        """Upsert по (spider, key). Если данные изменились — растёт счётчик версий."""
+    async def save_item(
+        self, spider: str, job_id: str, url: str, key: str, data: dict[str, Any]
+    ) -> None:
+        """Upsert by (spider, key). Bumps versions when payload changes."""
         now = datetime.now(UTC)
-        h = hashlib.sha1(json.dumps(data, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+        h = hashlib.sha1(
+            json.dumps(data, sort_keys=True, ensure_ascii=False, default=str).encode()
+        ).hexdigest()
         insert = self._insert()
         stmt = insert(items).values(
-            spider=spider, key=key[:512], job_id=job_id, url=url, data=data, data_hash=h,
-            versions=1, first_seen=now, updated_at=now,
+            spider=spider,
+            key=key[:512],
+            job_id=job_id,
+            url=url,
+            data=data,
+            data_hash=h,
+            versions=1,
+            first_seen=now,
+            updated_at=now,
         )
         ex = stmt.excluded
         stmt = stmt.on_conflict_do_update(
             index_elements=["spider", "key"],
             set_={
-                "job_id": ex.job_id, "url": ex.url, "data": ex.data, "data_hash": ex.data_hash, "updated_at": ex.updated_at,
+                "job_id": ex.job_id,
+                "url": ex.url,
+                "data": ex.data,
+                "data_hash": ex.data_hash,
+                "updated_at": ex.updated_at,
                 "versions": items.c.versions + (items.c.data_hash != ex.data_hash).cast(Integer),
             },
         )
         async with self.engine.begin() as conn:
             await conn.execute(stmt)
 
-    async def fetch(self, *, job_id: str | None = None, spider: str | None = None, limit: int | None = None) -> list[dict]:
+    async def fetch(
+        self, *, job_id: str | None = None, spider: str | None = None, limit: int | None = None
+    ) -> list[dict]:
         q = select(items).order_by(items.c.id)
         if job_id:
             q = q.where(items.c.job_id == job_id)
@@ -81,7 +110,9 @@ class Storage:
 
     async def count(self, job_id: str) -> int:
         async with self.engine.connect() as conn:
-            return (await conn.execute(select(func.count()).where(items.c.job_id == job_id))).scalar_one()
+            return (
+                await conn.execute(select(func.count()).where(items.c.job_id == job_id))
+            ).scalar_one()
 
 
 def _flatten(rows: list[dict]) -> tuple[list[str], list[list[Any]]]:
@@ -106,7 +137,7 @@ def to_csv(rows: list[dict]) -> bytes:
     w = csv.writer(buf)
     w.writerow(header)
     w.writerows(data)
-    return buf.getvalue().encode("utf-8-sig")  # BOM — чтобы Excel открыл кириллицу
+    return buf.getvalue().encode("utf-8-sig")  # BOM so Excel opens Cyrillic correctly
 
 
 def to_xlsx(rows: list[dict], title: str = "items") -> bytes:
@@ -134,4 +165,7 @@ def to_xlsx(rows: list[dict], title: str = "items") -> bytes:
     return buf.getvalue()
 
 
-EXPORTERS = {"csv": (to_csv, "text/csv"), "xlsx": (to_xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+EXPORTERS = {
+    "csv": (to_csv, "text/csv"),
+    "xlsx": (to_xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+}
